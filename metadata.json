@@ -1,0 +1,5 @@
+{
+  "name": "dalat-trip",
+  "description": "A beautiful, mobile-friendly 3-day itinerary for a trip from SG to Da Lat.",
+  "requestFramePermissions": ["geolocation"]
+}
