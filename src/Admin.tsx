@@ -33,6 +33,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { DayPlan, Location } from './constants';
 import { cn } from './utils';
+import { saveLocation, deleteLocation, reorderLocations, updateDay } from './api';
 
 interface AdminProps {
   itinerary: DayPlan[];
@@ -142,11 +143,7 @@ export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
       order_index: idx
     }));
 
-    await fetch('/api/locations/reorder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locations: reorderPayload }),
-    });
+    await reorderLocations(reorderPayload);
 
     onRefresh();
   };
@@ -155,11 +152,7 @@ export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
     e.preventDefault();
     if (!editingLoc) return;
 
-    await fetch('/api/locations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editingLoc),
-    });
+    await saveLocation(editingLoc);
 
     setEditingLoc(null);
     onRefresh();
@@ -167,7 +160,7 @@ export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
 
   const handleDeleteLocation = async (id: string) => {
     if (!confirm('Are you sure you want to delete this location?')) return;
-    await fetch(`/api/locations/${id}`, { method: 'DELETE' });
+    await deleteLocation(id);
     onRefresh();
   };
 
@@ -175,11 +168,7 @@ export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
     e.preventDefault();
     if (!editingDay) return;
 
-    await fetch(`/api/days/${editingDay.day}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: editingDay.date, title: editingDay.title }),
-    });
+    await updateDay(editingDay.day, editingDay.date, editingDay.title);
 
     setEditingDay(null);
     onRefresh();
@@ -340,6 +329,19 @@ export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
                       value={editingLoc.address || ''}
                       onChange={e => setEditingLoc({...editingLoc, address: e.target.value})}
                       className="w-full pl-12 pr-4 py-4 bg-black/5 rounded-2xl font-bold text-sm focus:outline-none focus:ring-2 ring-black/5"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono font-black uppercase text-black/30 ml-2">Ghi chú / Hướng dẫn (Guide/Notes)</label>
+                  <div className="relative">
+                    <AlignLeft className="absolute left-4 top-4 text-black/20" size={18} />
+                    <textarea 
+                      value={editingLoc.guide || ''}
+                      onChange={e => setEditingLoc({...editingLoc, guide: e.target.value})}
+                      className="w-full pl-12 pr-4 py-4 bg-black/5 rounded-2xl font-bold text-sm focus:outline-none focus:ring-2 ring-black/5 min-h-[80px]"
+                      placeholder="Lên xe khách Phương Trang, báo tới bến xe..."
                     />
                   </div>
                 </div>

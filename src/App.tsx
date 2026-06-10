@@ -28,6 +28,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-
 import L from 'leaflet';
 import { DayPlan, Location } from './constants';
 import { cn, getDistance } from './utils';
+import { getItinerary, IS_STATIC } from './api';
 import Admin from './Admin';
 
 // Fix Leaflet marker icons
@@ -85,8 +86,7 @@ export default function App() {
   const mainRef = useRef<HTMLElement>(null);
 
   const fetchItinerary = async () => {
-    const res = await fetch('/api/itinerary');
-    const data = await res.json();
+    const data = await getItinerary();
     setItinerary(data);
   };
 
@@ -117,6 +117,18 @@ export default function App() {
 
   // WebSocket for multi-user sync
   useEffect(() => {
+    if (IS_STATIC) {
+      const savedChecklist = localStorage.getItem('travel-plan-checklist');
+      if (savedChecklist) {
+        try {
+          setCheckedItems(JSON.parse(savedChecklist));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      return;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(`${protocol}//${window.location.host}`);
     socketRef.current = socket;
@@ -125,6 +137,7 @@ export default function App() {
       const message = JSON.parse(event.data);
       if (message.type === 'SYNC_CHECKLIST') {
         setCheckedItems(message.payload);
+        localStorage.setItem('travel-plan-checklist', JSON.stringify(message.payload));
       } else if (message.type === 'UPDATE_USER_COUNT') {
         setUserCount(message.payload);
       } else if (message.type === 'SYNC_ITINERARY') {
@@ -152,7 +165,7 @@ export default function App() {
   }, [currentDay]);
 
   const mapCenter = useMemo(() => {
-    if (!currentDay || currentDay.locations.length === 0) return [11.9425, 108.4361] as [number, number];
+    if (!currentDay || currentDay.locations.length === 0) return [13.0900, 109.3000] as [number, number];
     const selected = currentDay.locations.find(l => l.id === selectedLocationId);
     if (selected) return [selected.lat, selected.lng] as [number, number];
     return [currentDay.locations[0].lat, currentDay.locations[0].lng] as [number, number];
@@ -177,6 +190,15 @@ export default function App() {
   }
 
   const togglePackingItem = (id: number) => {
+    let newCheckedItems;
+    if (checkedItems.includes(id)) {
+      newCheckedItems = checkedItems.filter(i => i !== id);
+    } else {
+      newCheckedItems = [...checkedItems, id];
+    }
+    setCheckedItems(newCheckedItems);
+    localStorage.setItem('travel-plan-checklist', JSON.stringify(newCheckedItems));
+
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'TOGGLE_ITEM', payload: id }));
     }
@@ -198,8 +220,8 @@ export default function App() {
           className="absolute inset-0 z-0"
         >
           <img 
-            src="https://picsum.photos/seed/dalat-flowers/800/1200" 
-            alt="Đà Lạt Flowers" 
+            src="https://images.unsplash.com/photo-1544735716-392fe2489ffa?auto=format&fit=crop&q=80&w=800" 
+            alt="Phú Yên Coast" 
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
@@ -221,8 +243,8 @@ export default function App() {
               </button>
             </div>
             <h1 className="text-4xl font-serif italic text-white leading-tight">
-              🧭 SG → ĐÀ LẠT <br />
-              <span className="not-italic font-bold text-5xl tracking-tighter">27/2 — 1/3</span>
+              🧭 SG → PHÚ YÊN <br />
+              <span className="not-italic font-bold text-5xl tracking-tighter">18/6 — 21/6</span>
             </h1>
             
             <div className="mt-6 flex items-center gap-6">
@@ -230,7 +252,7 @@ export default function App() {
                 <span className="text-[9px] text-white/50 uppercase tracking-widest font-bold">Weather</span>
                 <div className="flex items-center gap-2 text-white">
                   <CloudSun size={16} className="text-emerald-300" />
-                  <span className="text-sm font-bold">16°C - 24°C</span>
+                  <span className="text-sm font-bold">28°C - 34°C</span>
                 </div>
               </div>
               <div className="w-px h-8 bg-white/20" />
@@ -238,7 +260,7 @@ export default function App() {
                 <span className="text-[9px] text-white/50 uppercase tracking-widest font-bold">Stay</span>
                 <div className="flex items-center gap-2 text-white">
                   <Bed size={16} className="text-emerald-300" />
-                  <span className="text-sm font-bold">Ladalat Hotel</span>
+                  <span className="text-sm font-bold">Nhà Liền (Tây Hòa)</span>
                 </div>
               </div>
             </div>
@@ -472,6 +494,16 @@ export default function App() {
                         <p className="text-base text-black/50 leading-relaxed font-medium">
                           {loc.description}
                         </p>
+
+                        {loc.guide && (
+                          <div className="mt-3 px-4 py-3 rounded-2xl bg-amber-50/90 border border-amber-200/60 flex items-start gap-2.5 shadow-sm text-xs text-amber-900/90">
+                            <span className="text-sm">📒</span>
+                            <div className="flex-1 leading-relaxed">
+                              <span className="font-black text-amber-950 block mb-0.5 text-[9px] uppercase tracking-wider">Ghi chú / Hướng dẫn:</span>
+                              {loc.guide}
+                            </div>
+                          </div>
+                        )}
 
                         <AnimatePresence>
                           {(selectedLocationId === loc.id || loc.suggestions) && (

@@ -26,7 +26,8 @@ async function startServer() {
       type TEXT,
       address TEXT,
       suggestions TEXT,
-      order_index INTEGER DEFAULT 0
+      order_index INTEGER DEFAULT 0,
+      guide TEXT
     );
     CREATE TABLE IF NOT EXISTS days (
       day INTEGER PRIMARY KEY,
@@ -39,8 +40,8 @@ async function startServer() {
   const count = db.prepare("SELECT COUNT(*) as count FROM locations").get() as { count: number };
   if (count.count === 0) {
     const insertLoc = db.prepare(`
-      INSERT INTO locations (id, day, name, time, description, lat, lng, type, address, suggestions, order_index)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO locations (id, day, name, time, description, lat, lng, type, address, suggestions, order_index, guide)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertDay = db.prepare(`
       INSERT INTO days (day, date, title)
@@ -61,7 +62,8 @@ async function startServer() {
           loc.type,
           loc.address || null,
           loc.suggestions ? JSON.stringify(loc.suggestions) : null,
-          idx
+          idx,
+          loc.guide || null
         );
       });
     });
@@ -88,10 +90,10 @@ async function startServer() {
   });
 
   app.post("/api/locations", (req, res) => {
-    const { id, day, name, time, description, lat, lng, type, address, suggestions, order_index } = req.body;
+    const { id, day, name, time, description, lat, lng, type, address, suggestions, order_index, guide } = req.body;
     db.prepare(`
-      INSERT OR REPLACE INTO locations (id, day, name, time, description, lat, lng, type, address, suggestions, order_index)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO locations (id, day, name, time, description, lat, lng, type, address, suggestions, order_index, guide)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, 
       day, 
@@ -103,7 +105,8 @@ async function startServer() {
       type, 
       address, 
       suggestions ? JSON.stringify(suggestions) : null,
-      order_index || 0
+      order_index || 0,
+      guide || null
     );
     
     broadcast({ type: "SYNC_ITINERARY" });
