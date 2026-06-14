@@ -1,5 +1,5 @@
 {
   "name": "dalat-trip",
-  "description": "A beautiful, mobile-friendly 3-day itinerary for a trip from SG to Da Lat.",
+  "description": "Lên lịch trình du lịch Phú Yên và Đà Lạt chi tiết, kiểm tra quãng đường và đánh dấu checklist.",
   "requestFramePermissions": ["geolocation"]
 }
