@@ -65,13 +65,26 @@ const MapUpdater = ({ center, zoom }: { center: [number, number], zoom: number }
   return null;
 };
 
-const PACKING_LIST = [
-  { id: 1, item: 'Áo khoác (Phòng hờ lạnh)', category: 'Clothing' },
-  { id: 2, item: 'Sạc dự phòng & Cáp sạc', category: 'Tech' },
-  { id: 3, item: 'Giấy tờ tùy thân & Bằng lái', category: 'Docs' },
-  { id: 4, item: 'Kem chống nắng & Kính mát', category: 'Skincare' },
-  { id: 6, item: 'Bàn chải đánh răng', category: 'Personal' },
-  { id: 7, item: 'Khăn mặt / Đồ cá nhân', category: 'Personal' },
+interface PackingItem {
+  id: string | number;
+  item: string;
+  category: string;
+  notes?: string;
+  isCustom?: boolean;
+}
+
+const DEFAULT_PACKING_LIST: PackingItem[] = [
+  { id: 1, category: 'Giấy tờ', item: 'CMND/CCCD', notes: 'Mang bản gốc' },
+  { id: 11, category: 'Giấy tờ', item: 'Bằng lái xe', notes: 'Để thuê xe máy hoặc lái xe' },
+  { id: 2, category: 'Hành lý', item: 'Quần áo', notes: '3 ngày, thời tiết mùa hè' },
+  { id: 3, category: 'Hành lý', item: 'Đồ vệ sinh cá nhân', notes: 'Bàn chải, kem đánh răng, dầu gội, sữa tắm' },
+  { id: 4, category: 'Hành lý', item: 'Thuốc men cần thiết', notes: 'Thuốc đau đầu, cảm cúm, dị ứng' },
+  { id: 5, category: 'Hành lý', item: 'Kem chống nắng', notes: 'SPF 50+ cho biển' },
+  { id: 6, category: 'Hành lý', item: 'Đồ tắm suối', notes: 'Quần áo bơi, khăn tắm dự phòng' },
+  { id: 7, category: 'Điện tử', item: 'Sạc điện thoại', notes: 'Sạc và dây cáp' },
+  { id: 8, category: 'Điện tử', item: 'Sạc dự phòng (Power bank)', notes: 'Dung lượng cao' },
+  { id: 9, category: 'Khác', item: 'Camera/Máy ảnh', notes: 'Lưu kỷ niệm chuyến đi' },
+  { id: 10, category: 'Khác', item: 'Kính râm', notes: 'Chống nắng' }
 ];
 
 export default function App() {
@@ -86,11 +99,44 @@ export default function App() {
   
   const [showMap, setShowMap] = useState(false);
   const [showPacking, setShowPacking] = useState(false);
-  const [checkedItems, setCheckedItems] = useState<number[]>([]);
+  const [checkedItems, setCheckedItems] = useState<(string | number)[]>([]);
   const [userCount, setUserCount] = useState(1);
   const [showFooter, setShowFooter] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [clickCount, setClickCount] = useState(0);
+
+  const [packingItems, setPackingItems] = useState<PackingItem[]>(() => {
+    const saved = localStorage.getItem('travel-plan-packing-list-items');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Inject driver's license if missing
+        const hasLicense = parsed.some((item: any) => item.item === 'Bằng lái xe');
+        const updated = [...parsed];
+        if (!hasLicense) {
+          updated.push({ id: 11, category: 'Giấy tờ', item: 'Bằng lái xe', notes: 'Để thuê xe máy hoặc lái xe' });
+        }
+        // Force clothing notes to match the updated 3 days
+        updated.forEach((item: any) => {
+          if (item.item === 'Quần áo' && item.notes === '7 ngày, thời tiết mùa hè') {
+            item.notes = '3 ngày, thời tiết mùa hè';
+          }
+        });
+        return updated;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return DEFAULT_PACKING_LIST;
+  });
+
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState('Giấy tờ');
+  const [newItemNotes, setNewItemNotes] = useState('');
+
+  useEffect(() => {
+    localStorage.setItem('travel-plan-packing-list-items', JSON.stringify(packingItems));
+  }, [packingItems]);
   
   // Trip Creation States
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -229,9 +275,9 @@ export default function App() {
     return [currentDay.locations[0].lat, currentDay.locations[0].lng] as [number, number];
   }, [currentDay, selectedLocationId]);
 
-  const togglePackingItem = (id: number) => {
+  const togglePackingItem = (id: string | number) => {
     let newCheckedItems;
-    if (checkedItems.includes(id)) {
+    if (checkedItems.includes(id as any)) {
       newCheckedItems = checkedItems.filter(i => i !== id);
     } else {
       newCheckedItems = [...checkedItems, id];
@@ -243,6 +289,51 @@ export default function App() {
       socketRef.current.send(JSON.stringify({ type: 'TOGGLE_ITEM', payload: id }));
     }
   };
+
+  const deletePackingItem = (id: string | number) => {
+    setPackingItems(prev => prev.filter(item => item.id !== id));
+    setCheckedItems(prev => prev.filter(i => i !== id));
+  };
+
+  const resetPackingItems = () => {
+    if (window.confirm('Bạn có muốn khôi phục danh sách đồ dùng chuẩn bị về mặc định không?')) {
+      setPackingItems(DEFAULT_PACKING_LIST);
+      setCheckedItems([]);
+      localStorage.removeItem('travel-plan-checklist');
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ type: 'SYNC_CHECKLIST', payload: [] }));
+      }
+    }
+  };
+
+  const handleAddPackingItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newItemName.trim()) return;
+
+    const newItem: PackingItem = {
+      id: `packing-${Date.now()}`,
+      item: newItemName.trim(),
+      category: newItemCategory,
+      notes: newItemNotes.trim() || undefined,
+      isCustom: true
+    };
+
+    setPackingItems(prev => [...prev, newItem]);
+    setNewItemName('');
+    setNewItemNotes('');
+  };
+
+  const groupedItems = useMemo(() => {
+    const groups: Record<string, PackingItem[]> = {};
+    packingItems.forEach(item => {
+      const cat = item.category || 'Khác';
+      if (!groups[cat]) {
+        groups[cat] = [];
+      }
+      groups[cat].push(item);
+    });
+    return groups;
+  }, [packingItems]);
 
   const navigateToLocation = (loc: Location) => {
     const destination = loc.address ? encodeURIComponent(loc.address) : `${loc.lat},${loc.lng}`;
@@ -708,9 +799,9 @@ export default function App() {
                 title="Bản đồ chuẩn bị đồ dùng"
               >
                 <CheckCircle size={16} />
-                {checkedItems.length > 0 && !showPacking && (
+                {checkedItems.filter(id => packingItems.some(item => item.id === id)).length > 0 && !showPacking && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 text-white text-[8px] flex items-center justify-center rounded-full border-2 border-[#FDFCFB]">
-                    {checkedItems.length}
+                    {checkedItems.filter(id => packingItems.some(item => item.id === id)).length}
                   </span>
                 )}
               </button>
@@ -737,13 +828,13 @@ export default function App() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="bg-emerald-50/50 border-b border-emerald-100 overflow-hidden"
+              className="bg-emerald-50/50 border-b border-emerald-100 overflow-hidden font-sans"
             >
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Users size={14} className="text-emerald-600" />
-                    <h3 className="text-xs font-black uppercase tracking-wider text-emerald-800/80">Checklist Đồng Đội</h3>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-emerald-800/80">Checklist Đồng Đội 🎒</h3>
                     <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 rounded-full">
                       <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
                       <span className="text-[8px] font-black text-emerald-600 uppercase tracking-tighter">
@@ -751,28 +842,142 @@ export default function App() {
                       </span>
                     </div>
                   </div>
-                  <span className="text-[10px] font-black text-emerald-600/50 font-mono">{checkedItems.length}/{PACKING_LIST.length}</span>
-                </div>
-                <div className="grid grid-cols-1 gap-1.5">
-                  {PACKING_LIST.map(item => (
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-black text-emerald-600/70 font-mono">
+                      {checkedItems.filter(id => packingItems.some(item => item.id === id)).length}/{packingItems.length}
+                    </span>
                     <button
-                      key={item.id}
-                      onClick={() => togglePackingItem(item.id)}
-                      className="flex items-center gap-3 p-3 bg-white rounded-xl border border-emerald-100 shadow-sm text-left transition-all active:scale-95"
+                      type="button"
+                      onClick={resetPackingItems}
+                      className="text-[9px] hover:underline text-rose-600 font-black uppercase tracking-wider"
+                      title="Khôi phục danh sách mặc định"
                     >
-                      <div className={cn(
-                        "w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-all",
-                        checkedItems.includes(item.id) ? "bg-emerald-500 border-emerald-500 text-white" : "border-emerald-200"
-                      )}>
-                        {checkedItems.includes(item.id) && <CheckCircle2 size={10} />}
-                      </div>
-                      <div className="flex flex-col select-none">
-                        <span className={cn("text-xs font-black", checkedItems.includes(item.id) ? "text-black/30 line-through" : "text-black/70")}>{item.item}</span>
-                        <span className="text-[8px] font-mono font-black text-black/20 uppercase tracking-tighter leading-none">{item.category}</span>
-                      </div>
+                      Reset
                     </button>
+                  </div>
+                </div>
+
+                {/* Grouped layout by Category */}
+                <div className="space-y-4">
+                  {(Object.entries(groupedItems) as [string, PackingItem[]][]).map(([category, items]) => (
+                    <div key={category} className="bg-white/40 p-4 rounded-2xl border border-emerald-100/30">
+                      <h4 className="text-[10px] font-bold uppercase text-emerald-800 tracking-wider mb-2.5 flex items-center gap-1.5 border-b border-emerald-100/20 pb-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        {category}
+                      </h4>
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {items.map(item => {
+                          const isCompleted = checkedItems.includes(item.id);
+                          return (
+                            <div
+                              key={item.id}
+                              className="flex items-center justify-between gap-3 p-3 bg-white hover:bg-emerald-50/20 rounded-xl border border-emerald-100/50 shadow-sm transition-all text-left"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => togglePackingItem(item.id)}
+                                className="flex-1 flex items-center gap-3 text-left"
+                              >
+                                <div className={cn(
+                                  "w-5 h-5 rounded-full border flex items-center justify-center transition-all shrink-0",
+                                  isCompleted ? "bg-emerald-500 border-emerald-500 text-white" : "border-emerald-200 bg-white"
+                                )}>
+                                  {isCompleted && <CheckCircle2 size={11} />}
+                                </div>
+                                <div className="flex flex-col select-none">
+                                  <span className={cn(
+                                    "text-xs font-bold leading-snug", 
+                                    isCompleted ? "text-black/30 line-through font-medium" : "text-black/80"
+                                  )}>
+                                    {item.item}
+                                  </span>
+                                  {item.notes && (
+                                    <span className={cn(
+                                      "text-[10px] mt-0.5 font-medium leading-none",
+                                      isCompleted ? "text-black/20" : "text-black/45"
+                                    )}>
+                                      📝 {item.notes}
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deletePackingItem(item.id);
+                                }}
+                                className="p-1 px-2 rounded-lg hover:bg-rose-50 text-black/20 hover:text-rose-500 transition-colors shrink-0"
+                                title="Xóa"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ))}
                 </div>
+
+                {/* Form to add custom packing items */}
+                <form 
+                  onSubmit={handleAddPackingItem}
+                  className="mt-5 p-4 bg-white rounded-2xl border border-emerald-100 shadow-sm space-y-3"
+                >
+                  <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1">
+                    <Plus size={12} className="text-emerald-500" /> Thêm đồ dùng tự chọn
+                  </h4>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-black/40 mb-1 tracking-wider">Tên món đồ *</label>
+                      <input
+                        type="text"
+                        value={newItemName}
+                        onChange={(e) => setNewItemName(e.target.value)}
+                        placeholder="Ví dụ: Quần bơi, Loa kéo, Thuốc đau bụng..."
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-medium focus:outline-none focus:border-emerald-200"
+                        required
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-black/40 mb-1 tracking-wider font-sans">Hạng mục</label>
+                        <select
+                          value={newItemCategory}
+                          onChange={(e) => setNewItemCategory(e.target.value)}
+                          className="w-full px-2 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold font-sans focus:outline-none focus:border-emerald-200"
+                        >
+                          <option value="Giấy tờ">Giấy tờ 📄</option>
+                          <option value="Hành lý">Hành lý 🎒</option>
+                          <option value="Điện tử">Điện tử ⚡</option>
+                          <option value="Khác">Khác ✨</option>
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-black/40 mb-1 tracking-wider font-sans">Ghi chú (Không bắt buộc)</label>
+                        <input
+                          type="text"
+                          value={newItemNotes}
+                          onChange={(e) => setNewItemNotes(e.target.value)}
+                          placeholder="Ví dụ: Đút túi khóa..."
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-medium focus:outline-none focus:border-emerald-200"
+                        />
+                      </div>
+                    </div>
+                    
+                    <button
+                      type="submit"
+                      className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm font-sans"
+                    >
+                      Thêm Vào Danh Sách
+                    </button>
+                  </div>
+                </form>
+
               </div>
             </motion.div>
           )}

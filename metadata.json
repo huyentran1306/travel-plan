@@ -1,5 +1,5 @@
 {
-  "name": "dalat-trip",
+  "name": "phu-yen-trip",
   "description": "Lên lịch trình du lịch Phú Yên và Đà Lạt chi tiết, kiểm tra quãng đường và đánh dấu checklist.",
   "requestFramePermissions": ["geolocation"]
 }

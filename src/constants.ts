@@ -211,15 +211,15 @@ export const ITINERARY: DayPlan[] = [
       },
       {
         id: 'py-t2-3',
-        name: 'Tới nhà Liền nghỉ ngơi & Ăn sáng',
+        name: 'Tới nhà Liền ăn tô bánh canh hẹ & Nghỉ ngơi',
         time: '09:00 - 10:30',
-        description: 'Về tới nhà Liền ấm cáp, nghỉ chân rửa mặt, thưởng thức bữa ăn sáng nóng hổi chất phác nông thôn Phú Yên và ngủ bù 1 tiếng.',
+        description: 'Về tới nhà Liền ấm áp, nghỉ chân rửa mặt, cùng thưởng thức ngay tô bánh canh hẹ nóng hổi thơm ngon đặc sản Phú Yên và chợp mắt nghỉ ngơi dưỡng sức.',
         lat: 13.0185,
         lng: 109.1235,
         type: 'rest',
         address: 'Nhà Liền, Hòa Mỹ, Tây Hòa',
         guide: 'Một nhóm nghỉ ngơi, một số còn lại cùng chuẩn bị đồ ăn mang theo dã ngoại dọn suối',
-        suggestions: ['Ăn tô bún nóng ấm bụng']
+        suggestions: ['Thưởng thức tô bánh canh hẹ đặc sản xứ Nẫu']
       },
       {
         id: 'py-t2-4',
@@ -235,9 +235,9 @@ export const ITINERARY: DayPlan[] = [
       },
       {
         id: 'py-t2-5',
-        name: 'Xế chiều: Tiếp tục giao luận bờ suối hoặc về nhà',
+        name: 'Xế chiều: Trò chuyện, vui chơi bờ suối hoặc về nhà',
         time: '15:30 - 18:00',
-        description: 'Vui vẻ trò chuyện gắn kết tình cảm bạn bè, nếu còn chưa say thì có thể mang đồ về sân nhà Liền tụ tập lai rai tiếp.',
+        description: 'Tụ tập trò chuyện, vui chơi thoải mái gắn kết tình bạn, dọn dẹp sạch sẽ rác thải rồi cùng di chuyển về sân nhà Liền tiếp tục chill.',
         lat: 13.0185,
         lng: 109.1235,
         type: 'party',
@@ -268,7 +268,7 @@ export const ITINERARY: DayPlan[] = [
   {
     day: 3,
     date: '20/06/2026 (Thứ 7)',
-    title: '🏖️ Khám phá Vịnh Vũng Rô - Đêm lãng mạn Làng Lô',
+    title: '🏖️ Khám phá Vịnh Vũng Rô - Đêm lãng mạn Làng Lò',
     locations: [
       {
         id: 'py-t3-1',
@@ -295,29 +295,29 @@ export const ITINERARY: DayPlan[] = [
       },
       {
         id: 'py-t3-3',
-        name: '🏨 Check-in Hotel / Homestay Làng Lô',
+        name: '🏨 Check-in Hotel / Homestay Làng Lò',
         time: '12:00 - 13:00',
-        description: 'Làm thủ tục nhận phòng xinh xắn sát bãi biển làng chài chầm chậm thanh bình tại Làng Lô.',
+        description: 'Làm thủ tục nhận phòng xinh xắn sát bãi biển làng chài chầm chậm thanh bình tại Làng Lò.',
         lat: 12.8650,
         lng: 109.4210,
         type: 'hotel',
-        address: 'Làng Lô (Làng Chài), Vịnh Vũng Rô, Phú Yên',
+        address: 'Làng Lò (Làng Chài), Vịnh Vũng Rô, Phú Yên',
         guide: 'Tắm rửa sơ cho sảng khoái mát mẻ'
       },
       {
         id: 'py-t3-4',
         name: 'Ăn trưa đại tiệc cua ghẹ tươi rói',
         time: '13:30 - 14:30',
-        description: 'Bữa trưa ngập tràn hải sản tại bến tàu cá Làng Lô: cua luộc ngọt thịt, cá bớp hấp hành và hàu nướng mỡ hành.',
+        description: 'Bữa trưa ngập tràn hải sản tại bến tàu cá Làng Lò: cua luộc ngọt thịt, cá bớp hấp hành và hàu nướng mỡ hành.',
         lat: 12.8655,
         lng: 109.4220,
         type: 'food',
-        address: 'Nhà hàng biển tại Làng Lô',
+        address: 'Nhà hàng biển tại Làng Lò',
         suggestions: ['Hỏi giá hải sản tươi sống trước khi bắt', 'Nên làm ly nước lá tía tô hạ nhiệt']
       },
       {
         id: 'py-t3-5',
-        name: 'Nghỉ ngơi lấy tĩnh tại phòng',
+        name: 'Nghỉ ngơi tại phòng',
         time: '15:00 - 16:30',
         description: 'Tránh nắng gắt bóng xế chiều, tận hưởng một giấc chợp mắt dịu tai bên tiếng sóng vỗ.',
         lat: 12.8650,
@@ -333,7 +333,7 @@ export const ITINERARY: DayPlan[] = [
         lat: 12.8660,
         lng: 109.4200,
         type: 'activity',
-        address: 'Làng Lô (Làng Chài), Phú Yên',
+        address: 'Làng Lò (Làng Chài), Phú Yên',
         suggestions: ['Chụp ảnh phơi sáng mặt biển đỏ rực', 'Tự do dạo bờ cát vàng mịn màng']
       },
       {
@@ -344,7 +344,7 @@ export const ITINERARY: DayPlan[] = [
         lat: 12.8670,
         lng: 109.4230,
         type: 'food',
-        address: 'Nhà hàng / Quán ăn vặt Làng Lô',
+        address: 'Nhà hàng / Quán ăn vặt Làng Lò',
         suggestions: ['Thưởng thức chè hột sen mát lạnh', 'Làm ly sinh tố vừa đi bộ bờ biển']
       },
       {
@@ -368,22 +368,22 @@ export const ITINERARY: DayPlan[] = [
         id: 'py-t4-1',
         name: 'Thưởng thức điểm tâm sáng ngắm hừng đông',
         time: '06:00 - 08:00',
-        description: 'Đón trọn vẹn tia nắng bình minh dịu ngọt chân trời Làng Lô, thưởng thức cháo hải sản hoặc bún chả sứa dai ngon.',
+        description: 'Đón trọn vẹn tia nắng bình minh dịu ngọt chân trời Làng Lò, thưởng thức cháo hải sản hoặc bún chả sứa dai ngon.',
         lat: 12.8650,
         lng: 109.4210,
         type: 'food',
-        address: 'Bãi biển Làng Lô hoặc quán ăn sáng sát biển',
+        address: 'Bãi biển Làng Lò hoặc quán ăn sáng sát biển',
         suggestions: ['Nếu mệt mỏi có thể ngủ thêm đến trưa, tự do xả hơi']
       },
       {
         id: 'py-t4-2',
         name: 'Trả phòng Check-out homestay gọn ghẽ',
         time: '09:00 - 10:00',
-        description: 'Đóng gói đồ đạc chỉnh chu lịch sử cá nhân, dọn sạch phòng trước khi nói lời tạm biệt mảnh đất nồng hậu Làng Lô.',
+        description: 'Đóng gói đồ đạc chỉn chu sạch sẽ cá nhân, dọn sạch phòng trước khi nói lời tạm biệt mảnh đất nồng hậu Làng Lò.',
         lat: 12.8650,
         lng: 109.4210,
         type: 'hotel',
-        address: 'Homestay của bạn tại Làng Lô',
+        address: 'Homestay của bạn tại Làng Lò',
         guide: 'Nhớ đảo mắt rà soát kỹ sạc cáp, tư trang cá nhân kẻo quên'
       },
       {
