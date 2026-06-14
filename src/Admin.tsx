@@ -37,6 +37,7 @@ import { saveLocation, deleteLocation, reorderLocations, updateDay } from './api
 
 interface AdminProps {
   itinerary: DayPlan[];
+  tripId: string;
   onBack: () => void;
   onRefresh: () => void;
 }
@@ -108,7 +109,7 @@ function SortableLocation({ loc, day, onEdit, onDelete }: SortableItemProps) {
   );
 }
 
-export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
+export default function Admin({ itinerary, tripId, onBack, onRefresh }: AdminProps) {
   const [editingLoc, setEditingLoc] = useState<Partial<Location> & { day?: number } | null>(null);
   const [editingDay, setEditingDay] = useState<{ day: number, date: string, title: string } | null>(null);
 
@@ -143,7 +144,7 @@ export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
       order_index: idx
     }));
 
-    await reorderLocations(reorderPayload);
+    await reorderLocations(reorderPayload, tripId);
 
     onRefresh();
   };
@@ -152,7 +153,7 @@ export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
     e.preventDefault();
     if (!editingLoc) return;
 
-    await saveLocation(editingLoc);
+    await saveLocation({ ...editingLoc, trip_id: tripId });
 
     setEditingLoc(null);
     onRefresh();
@@ -160,7 +161,7 @@ export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
 
   const handleDeleteLocation = async (id: string) => {
     if (!confirm('Are you sure you want to delete this location?')) return;
-    await deleteLocation(id);
+    await deleteLocation(id, tripId);
     onRefresh();
   };
 
@@ -168,7 +169,7 @@ export default function Admin({ itinerary, onBack, onRefresh }: AdminProps) {
     e.preventDefault();
     if (!editingDay) return;
 
-    await updateDay(editingDay.day, editingDay.date, editingDay.title);
+    await updateDay(editingDay.day, editingDay.date, editingDay.title, tripId);
 
     setEditingDay(null);
     onRefresh();

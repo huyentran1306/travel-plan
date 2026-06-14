@@ -22,13 +22,17 @@ import {
   CloudSun,
   Navigation2,
   Users,
-  CheckCircle
+  CheckCircle,
+  Plus,
+  Trash2,
+  Compass,
+  ChevronDown
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { DayPlan, Location } from './constants';
+import { DayPlan, Location, Trip } from './constants';
 import { cn, getDistance } from './utils';
-import { getItinerary, IS_STATIC } from './api';
+import { getItinerary, getTrips, saveTrip, deleteTrip, IS_STATIC } from './api';
 import Admin from './Admin';
 
 // Fix Leaflet marker icons
@@ -62,18 +66,24 @@ const MapUpdater = ({ center, zoom }: { center: [number, number], zoom: number }
 };
 
 const PACKING_LIST = [
-  { id: 1, item: 'Áo khoác (Đà Lạt lạnh lắm)', category: 'Clothing' },
+  { id: 1, item: 'Áo khoác (Phòng hờ lạnh)', category: 'Clothing' },
   { id: 2, item: 'Sạc dự phòng & Cáp sạc', category: 'Tech' },
   { id: 3, item: 'Giấy tờ tùy thân & Bằng lái', category: 'Docs' },
-  { id: 4, item: 'Kem chống nắng & Dưỡng ẩm', category: 'Skincare' },
+  { id: 4, item: 'Kem chống nắng & Kính mát', category: 'Skincare' },
   { id: 6, item: 'Bàn chải đánh răng', category: 'Personal' },
-  { id: 7, item: 'Khăn mặt/Khăn tắm', category: 'Personal' },
+  { id: 7, item: 'Khăn mặt / Đồ cá nhân', category: 'Personal' },
 ];
 
 export default function App() {
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(() => {
+    return localStorage.getItem('travel-plan-active-trip-id');
+  });
+  
   const [itinerary, setItinerary] = useState<DayPlan[]>([]);
   const [activeDay, setActiveDay] = useState(0);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  
   const [showMap, setShowMap] = useState(false);
   const [showPacking, setShowPacking] = useState(false);
   const [checkedItems, setCheckedItems] = useState<number[]>([]);
@@ -82,26 +92,71 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [clickCount, setClickCount] = useState(0);
   
+  // Trip Creation States
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newTripData, setNewTripData] = useState({
+    name: '',
+    description: '',
+    startDate: '',
+    endDate: '',
+    imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80'
+  });
+
   const socketRef = useRef<WebSocket | null>(null);
   const mainRef = useRef<HTMLElement>(null);
+  const selectedTripIdRef = useRef<string | null>(selectedTripId);
 
-  const fetchItinerary = async () => {
-    const data = await getItinerary();
+  // Sync ref to avoid socket recreation closures
+  useEffect(() => {
+    selectedTripIdRef.current = selectedTripId;
+    if (selectedTripId) {
+      localStorage.setItem('travel-plan-active-trip-id', selectedTripId);
+    } else {
+      localStorage.removeItem('travel-plan-active-trip-id');
+    }
+  }, [selectedTripId]);
+
+  // Safeguard days index when switching trips
+  useEffect(() => {
+    setActiveDay(0);
+    setSelectedLocationId(null);
+  }, [selectedTripId]);
+
+  const loadTripsList = async () => {
+    const data = await getTrips();
+    setTrips(data);
+  };
+
+  const fetchItinerary = async (tripId: string) => {
+    const data = await getItinerary(tripId);
     setItinerary(data);
   };
 
   useEffect(() => {
-    fetchItinerary();
+    loadTripsList();
   }, []);
 
-  const currentDay = itinerary[activeDay];
+  useEffect(() => {
+    if (selectedTripId) {
+      fetchItinerary(selectedTripId);
+    } else {
+      setItinerary([]);
+    }
+  }, [selectedTripId]);
 
-  // Scroll listener for footer visibility
+  const activeTrip = useMemo(() => {
+    return trips.find(t => t.id === selectedTripId);
+  }, [trips, selectedTripId]);
+
+  const currentDay = useMemo(() => {
+    return itinerary[activeDay];
+  }, [itinerary, activeDay]);
+
+  // Scroll listener for footer visibility (active trip view)
   useEffect(() => {
     const handleScroll = () => {
       if (mainRef.current) {
         const { scrollTop, scrollHeight, clientHeight } = mainRef.current;
-        // Show footer when scrolled to the bottom (within a small threshold)
         const atBottom = scrollHeight - scrollTop <= clientHeight + 50;
         setShowFooter(atBottom);
       }
@@ -110,10 +165,10 @@ export default function App() {
     const main = mainRef.current;
     if (main) {
       main.addEventListener('scroll', handleScroll);
-      handleScroll(); // Initial check
+      handleScroll();
     }
     return () => main?.removeEventListener('scroll', handleScroll);
-  }, [activeDay, showMap, showPacking, itinerary]);
+  }, [activeDay, showMap, showPacking, itinerary, selectedTripId]);
 
   // WebSocket for multi-user sync
   useEffect(() => {
@@ -140,8 +195,12 @@ export default function App() {
         localStorage.setItem('travel-plan-checklist', JSON.stringify(message.payload));
       } else if (message.type === 'UPDATE_USER_COUNT') {
         setUserCount(message.payload);
+      } else if (message.type === 'SYNC_TRIPS') {
+        loadTripsList();
       } else if (message.type === 'SYNC_ITINERARY') {
-        fetchItinerary();
+        if (selectedTripIdRef.current) {
+          fetchItinerary(selectedTripIdRef.current);
+        }
       }
     };
 
@@ -155,7 +214,6 @@ export default function App() {
       setIsAdmin(true);
       setClickCount(0);
     }
-    // Reset count after 2 seconds of inactivity
     setTimeout(() => setClickCount(0), 2000);
   };
 
@@ -170,24 +228,6 @@ export default function App() {
     if (selected) return [selected.lat, selected.lng] as [number, number];
     return [currentDay.locations[0].lat, currentDay.locations[0].lng] as [number, number];
   }, [currentDay, selectedLocationId]);
-
-  if (isAdmin) {
-    return (
-      <Admin 
-        itinerary={itinerary} 
-        onBack={() => setIsAdmin(false)} 
-        onRefresh={fetchItinerary} 
-      />
-    );
-  }
-
-  if (itinerary.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FDFCFB]">
-        <div className="w-8 h-8 border-4 border-black border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
 
   const togglePackingItem = (id: number) => {
     let newCheckedItems;
@@ -209,8 +249,356 @@ export default function App() {
     window.open(`https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${destination}`, '_blank');
   };
 
+  // Status computation for Trip badge
+  const getTripStatus = (startDateStr: string, endDateStr: string) => {
+    const now = new Date();
+    now.setHours(0,0,0,0);
+    const start = new Date(startDateStr);
+    start.setHours(0,0,0,0);
+    const end = new Date(endDateStr);
+    end.setHours(0,0,0,0);
+
+    if (now >= start && now <= end) {
+      return { label: 'Đang diễn ra 🚀', color: 'bg-emerald-500 text-white border-emerald-600' };
+    } else if (now < start) {
+      return { label: 'Sắp diễn ra 📅', color: 'bg-sky-500 text-white border-sky-600' };
+    } else {
+      return { label: 'Đã hoàn tất 🏆', color: 'bg-black/40 text-white/90 border-transparent' };
+    }
+  };
+
+  const handleCreateTripSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTripData.name || !newTripData.startDate || !newTripData.endDate) return;
+
+    const newTrip: Trip = {
+      id: `trip-${Date.now()}`,
+      name: newTripData.name,
+      description: newTripData.description || 'Hành trình cùng gia đình & đồng bọn.',
+      startDate: newTripData.startDate,
+      endDate: newTripData.endDate,
+      imageUrl: newTripData.imageUrl
+    };
+
+    await saveTrip(newTrip);
+    setShowCreateModal(false);
+    setNewTripData({
+      name: '',
+      description: '',
+      startDate: '',
+      endDate: '',
+      imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80'
+    });
+    // Reload trips list & select the newly created trip!
+    await loadTripsList();
+    setSelectedTripId(newTrip.id);
+  };
+
+  const handleDeleteTripClick = async (tripId: string) => {
+    if (!confirm('Bạn có chắc chắn muốn xóa hành trình này? Việc xóa sẽ bao gồm tất cả các ngày và địa điểm đi kèm.')) return;
+    await deleteTrip(tripId);
+    if (selectedTripId === tripId) {
+      setSelectedTripId(null);
+    }
+    loadTripsList();
+  };
+
+  // Active Trip Dynamic Presentation Configuration
+  const tripConfig = useMemo(() => {
+    if (!activeTrip) return null;
+    const isPhuYen = activeTrip.id === 'phu-yen-2026';
+    const isDalat = activeTrip.id === 'da-lat-2026';
+    const isVungTau = activeTrip.id === 'vung-tau-2026';
+
+    if (isPhuYen) {
+      return {
+        coverImage: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?auto=format&fit=crop&q=80&w=800',
+        weather: '28°C - 34°C',
+        stay: 'Nhà Liền (Tây Hòa)'
+      };
+    } else if (isDalat) {
+      return {
+        coverImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=80',
+        weather: '14°C - 21°C',
+        stay: 'Homestay Thung Lũng'
+      };
+    } else if (isVungTau) {
+      return {
+        coverImage: 'https://images.unsplash.com/photo-1519046904884-53103b34b206?auto=format&fit=crop&w=800&q=80',
+        weather: '27°C - 33°C',
+        stay: 'Căn hộ biển Bãi Sau'
+      };
+    } else {
+      return {
+        coverImage: activeTrip.imageUrl || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=800',
+        weather: '26°C - 32°C',
+        stay: 'Homestay / Khách sạn'
+      };
+    }
+  }, [activeTrip]);
+
+  if (isAdmin && selectedTripId) {
+    return (
+      <Admin 
+        itinerary={itinerary} 
+        tripId={selectedTripId}
+        onBack={() => setIsAdmin(false)} 
+        onRefresh={() => fetchItinerary(selectedTripId)} 
+      />
+    );
+  }
+
+  // --- VIEW 1: HOME PAGE TRIP SELECTOR ---
+  if (!selectedTripId) {
+    return (
+      <div className="min-h-screen flex flex-col max-w-md mx-auto bg-[#FDFCFB] shadow-2xl relative overflow-hidden font-sans selection:bg-emerald-100 selection:text-emerald-900 pb-16">
+        
+        {/* Cool, beautiful travel-inspired header */}
+        <header className="relative h-72 flex-shrink-0 flex flex-col justify-end p-8 overflow-hidden rounded-b-[2rem] shadow-lg">
+          {/* Stunning travel road trip / wanderlust backdrop */}
+          <img 
+            src="https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&q=80&w=800" 
+            alt="Wanderlust Background" 
+            className="absolute inset-0 w-full h-full object-cover select-none"
+            referrerPolicy="no-referrer"
+          />
+          {/* Elegant warm-toned dark bottom-feathered gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/20" />
+          
+          <div className="relative z-10 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 bg-white/20 backdrop-blur-md text-white border border-white/10 text-[9px] font-black uppercase rounded-lg tracking-widest leading-none">
+                ✈️ VI VU ĐỒNG BỌN
+              </span>
+              <div className="flex items-center gap-1.5 bg-emerald-500/80 backdrop-blur-md rounded-lg px-2.5 py-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                <span className="text-[8px] font-black text-white uppercase tracking-wider whitespace-nowrap">
+                  {userCount} kết nối
+                </span>
+              </div>
+            </div>
+            
+            <h1 className="text-3xl font-extrabold text-white tracking-tight leading-tight drop-shadow-md">
+              KẾ HOẠCH HÀNH TRÌNH 🗺️
+            </h1>
+            <p className="text-[11px] text-white/80 font-medium max-w-xs leading-relaxed tracking-wide drop-shadow-sm font-sans">
+              Theo dõi lịch trình chi tiết, tương tác cùng đồng đội và gói ghém hành lý một cách hoàn hảo nhất.
+            </p>
+          </div>
+        </header>
+
+        {/* Action strip */}
+        <section className="px-6 py-6 flex items-center justify-between border-b border-black/5 bg-white">
+          <div className="flex flex-col">
+            <span className="text-xs font-black text-black uppercase tracking-wider">Hành trình ({trips.length})</span>
+            <span className="text-[10px] text-black/40 font-bold uppercase tracking-wide">Xếp thứ tự gần nhất</span>
+          </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:scale-[1.03] active:scale-95 transition-all"
+          >
+            <Plus size={14} /> Thêm chuyến
+          </button>
+        </section>
+
+        {/* Trips grid stack */}
+        <main className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+          <AnimatePresence>
+            {trips.map((trip, idx) => {
+              const status = getTripStatus(trip.startDate, trip.endDate);
+              const isClosest = idx === 0; // Sorted in DB by closest first
+              const formattedStart = new Date(trip.startDate).toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric' });
+              const formattedEnd = new Date(trip.endDate).toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric', year: 'numeric' });
+
+              return (
+                <motion.div
+                  key={trip.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className="group relative h-48 bg-white rounded-3xl overflow-hidden cursor-pointer shadow-md hover:shadow-xl transition-all border border-black/5"
+                  onClick={() => setSelectedTripId(trip.id)}
+                >
+                  {/* Card Cover image */}
+                  <img 
+                    src={trip.imageUrl || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400&q=80'} 
+                    alt={trip.name} 
+                    className="absolute inset-0 w-full h-full object-cover scale-100 group-hover:scale-[1.04] transition-all duration-700"
+                    referrerPolicy="no-referrer"
+                  />
+                  {/* Heavy overlay for readability */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/45 to-black/10 transition-colors duration-300" />
+
+                  {/* Status badging absolute */}
+                  <div className="absolute top-4 left-4 flex gap-1.5 z-10 items-center">
+                    <span className={cn("px-2.5 py-1 text-[8px] font-black uppercase rounded-lg border shadow-sm tracking-widest", status.color)}>
+                      {status.label}
+                    </span>
+                    {isClosest && (
+                      <span className="px-2.5 py-1 bg-yellow-400 text-black text-[8px] font-black uppercase rounded-lg shadow-sm tracking-widest">
+                        Tiêu điểm ✨
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Absolute Delete Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteTripClick(trip.id);
+                    }}
+                    className="absolute top-4 right-4 p-2.5 bg-black/50 hover:bg-red-600 text-white rounded-xl backdrop-blur-md opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all shadow-sm z-20"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+
+                  {/* Text content card details */}
+                  <div className="absolute inset-x-4 bottom-4 text-white z-10 flex flex-col justify-end">
+                    <span className="text-[10px] font-bold text-white/60 mb-0.5 tracking-widest font-mono flex items-center gap-1">
+                      <Calendar size={10} /> {formattedStart} — {formattedEnd}
+                    </span>
+                    <h2 className="text-xl font-bold tracking-tight mb-1 group-hover:text-yellow-100 transition-colors leading-snug">
+                      {trip.name}
+                    </h2>
+                    <p className="text-xs text-white/50 line-clamp-1 max-w-[280px]">
+                      {trip.description}
+                    </p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+
+          {trips.length === 0 && (
+            <div className="py-16 text-center space-y-3">
+              <Compass size={40} className="mx-auto text-black/10 animate-spin" />
+              <p className="text-sm font-bold text-black/40 uppercase tracking-wider">Không tìm thấy chuyến đi nào</p>
+              <button 
+                onClick={() => setShowCreateModal(true)}
+                className="px-5 py-2 bg-black text-white rounded-xl text-xs font-black uppercase tracking-widest"
+              >
+                Tạo Chuyến Đi Mày Nhé!
+              </button>
+            </div>
+          )}
+        </main>
+
+        {/* Modal: New trip creation */}
+        <AnimatePresence>
+          {showCreateModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.form 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                onSubmit={handleCreateTripSubmit}
+                className="w-full max-w-xs bg-white rounded-[2.5rem] p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh]"
+              >
+                <div className="flex items-center justify-between border-b pb-3">
+                  <h3 className="text-lg font-black uppercase tracking-tight">Tạo chuyến đi 🚗</h3>
+                  <button type="button" onClick={() => setShowCreateModal(false)} className="text-black/30 font-bold text-xs uppercase uppercase">Hủy</button>
+                </div>
+
+                <div className="space-y-3.5 text-left">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-black uppercase text-black/30">Tên hành trình</label>
+                    <input 
+                      required
+                      placeholder="vd: Đà Lạt đi trốn nóng ❄️"
+                      value={newTripData.name}
+                      onChange={e => setNewTripData({...newTripData, name: e.target.value})}
+                      className="w-full px-4 py-3 bg-black/5 rounded-2xl font-bold text-xs focus:outline-none focus:ring-1 ring-black"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-black uppercase text-black/30">Mô tả ngắn</label>
+                    <textarea 
+                      placeholder="Ăn hải sản, tắm biển và chill hoàng hôn..."
+                      value={newTripData.description}
+                      onChange={e => setNewTripData({...newTripData, description: e.target.value})}
+                      className="w-full px-4 py-3 bg-black/5 rounded-2xl font-bold text-xs focus:outline-none focus:ring-1 ring-black min-h-[60px]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono font-black uppercase text-black/30">Ngày đi</label>
+                      <input 
+                        required
+                        type="date"
+                        value={newTripData.startDate}
+                        onChange={e => setNewTripData({...newTripData, startDate: e.target.value})}
+                        className="w-full px-4 py-3 bg-black/5 rounded-2xl font-bold text-xs focus:outline-none focus:ring-1 ring-black appearance-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono font-black uppercase text-black/30">Ngày về</label>
+                      <input 
+                        required
+                        type="date"
+                        value={newTripData.endDate}
+                        onChange={e => setNewTripData({...newTripData, endDate: e.target.value})}
+                        className="w-full px-4 py-3 bg-black/5 rounded-2xl font-bold text-xs focus:outline-none focus:ring-1 ring-black"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-black uppercase text-black/30">Ảnh bìa mẫu</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { name: 'Nước biển 🏖️', url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80' },
+                        { name: 'Núi mây ⛰️', url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=80' },
+                        { name: 'Khách sạn 🌊', url: 'https://images.unsplash.com/photo-1544735716-392fe2489ffa?auto=format&fit=crop&w=800' },
+                      ].map(cover => (
+                        <button
+                          key={cover.name}
+                          type="button"
+                          onClick={() => setNewTripData({ ...newTripData, imageUrl: cover.url })}
+                          className={cn(
+                            "py-1.5 rounded-lg border text-[8px] font-black capitalize truncate leading-none",
+                            newTripData.imageUrl === cover.url ? "bg-black text-white border-black" : "bg-black/5 text-black/50 border-transparent"
+                          )}
+                        >
+                          {cover.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  type="submit"
+                  className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg active:scale-95 transition-all"
+                >
+                  Bắt đầu Lên lịch ví vi vu
+                </button>
+              </motion.form>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Global branding credit line */}
+        <div className="absolute bottom-4 left-0 w-full text-center text-black/10 text-[8px] font-bold tracking-widest font-mono uppercase">
+          Team trip logs Space
+        </div>
+      </div>
+    );
+  }
+
+  // --- VIEW 2: TRIP DETAILED PLANNER VIEW ---
+  if (!tripConfig) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FDFCFB]">
+        <div className="w-8 h-8 border-4 border-black border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto bg-[#FDFCFB] shadow-2xl relative overflow-hidden font-sans selection:bg-emerald-100 selection:text-emerald-900">
+      
       {/* Hero Section */}
       <header className="relative h-80 flex-shrink-0 overflow-hidden">
         <motion.div 
@@ -220,47 +608,59 @@ export default function App() {
           className="absolute inset-0 z-0"
         >
           <img 
-            src="https://images.unsplash.com/photo-1544735716-392fe2489ffa?auto=format&fit=crop&q=80&w=800" 
-            alt="Phú Yên Coast" 
+            src={tripConfig.coverImage} 
+            alt={activeTrip.name} 
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/20 to-[#FDFCFB]" />
         </motion.div>
 
+        {/* Back back Button to Trip Selection Dashboard */}
+        <button 
+          onClick={() => {
+            setSelectedTripId(null);
+            setItinerary([]);
+          }}
+          className="absolute top-6 left-6 z-20 px-4 py-2 bg-black/65 hover:bg-black text-white text-[10px] font-black uppercase rounded-xl backdrop-blur-md flex items-center gap-1 shadow-md hover:scale-[1.03] active:scale-95 transition-all"
+        >
+          <ChevronLeft size={14} /> Tất cả chuyến đi
+        </button>
+
         <div className="relative z-10 p-8 h-full flex flex-col justify-end">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, type: "spring", stiffness: 100 }}
+            transition={{ delay: 0.1, type: "spring", stiffness: 100 }}
           >
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-2">
               <button 
                 onClick={handleSparkleClick}
                 className="p-1 hover:scale-110 transition-transform active:scale-95"
+                title="Double-click 3 times to enter admin mode"
               >
                 <Sparkles size={16} className="text-yellow-300 animate-pulse" />
               </button>
             </div>
-            <h1 className="text-4xl font-serif italic text-white leading-tight">
-              🧭 SG → PHÚ YÊN <br />
-              <span className="not-italic font-bold text-5xl tracking-tighter">18/6 — 21/6</span>
+            
+            <h1 className="text-3xl font-bold text-white tracking-tighter leading-tight mb-2">
+              {activeTrip.name}
             </h1>
             
-            <div className="mt-6 flex items-center gap-6">
+            <div className="flex items-center gap-5 mt-4">
               <div className="flex flex-col">
-                <span className="text-[9px] text-white/50 uppercase tracking-widest font-bold">Weather</span>
-                <div className="flex items-center gap-2 text-white">
-                  <CloudSun size={16} className="text-emerald-300" />
-                  <span className="text-sm font-bold">28°C - 34°C</span>
+                <span className="text-[8px] text-white/50 uppercase tracking-widest font-black font-mono">Thời tiết</span>
+                <div className="flex items-center gap-1.5 text-white">
+                  <CloudSun size={14} className="text-emerald-300" />
+                  <span className="text-xs font-bold leading-none">{tripConfig.weather}</span>
                 </div>
               </div>
-              <div className="w-px h-8 bg-white/20" />
+              <div className="w-px h-6 bg-white/20" />
               <div className="flex flex-col">
-                <span className="text-[9px] text-white/50 uppercase tracking-widest font-bold">Stay</span>
-                <div className="flex items-center gap-2 text-white">
-                  <Bed size={16} className="text-emerald-300" />
-                  <span className="text-sm font-bold">Nhà Liền (Tây Hòa)</span>
+                <span className="text-[8px] text-white/50 uppercase tracking-widest font-black font-mono">Lưu trú</span>
+                <div className="flex items-center gap-1.5 text-white">
+                  <Bed size={14} className="text-emerald-300" />
+                  <span className="text-xs font-bold leading-none truncate max-w-[120px]">{tripConfig.stay}</span>
                 </div>
               </div>
             </div>
@@ -268,62 +668,66 @@ export default function App() {
         </div>
       </header>
 
-      {/* Day Selector */}
-      <nav className="sticky top-0 z-30 bg-[#FDFCFB]/95 backdrop-blur-xl border-b border-black/5 px-5 py-5">
-        <div className="flex justify-between items-center">
-          <div className="flex gap-3">
-            {itinerary.map((day, idx) => (
-              <button
-                key={day.day}
-                onClick={() => {
-                  setActiveDay(idx);
-                  setSelectedLocationId(null);
-                }}
+      {/* Day Selector block if itinerary days exist */}
+      {itinerary.length > 0 && (
+        <nav className="sticky top-0 z-30 bg-[#FDFCFB]/95 backdrop-blur-xl border-b border-black/5 px-5 py-5">
+          <div className="flex justify-between items-center">
+            <div className="flex gap-2.5 overflow-x-auto no-scrollbar max-w-[80%]">
+              {itinerary.map((day, idx) => (
+                <button
+                  key={day.day}
+                  onClick={() => {
+                    setActiveDay(idx);
+                    setSelectedLocationId(null);
+                  }}
+                  className={cn(
+                    "relative px-4 py-2 rounded-2xl text-[11px] font-black transition-all duration-300 overflow-hidden shrink-0",
+                    activeDay === idx 
+                      ? "text-white" 
+                      : "text-black/30 hover:text-black/50"
+                  )}
+                >
+                  {activeDay === idx && (
+                    <motion.div 
+                      layoutId="activeDayBg"
+                      className="absolute inset-0 bg-black z-0"
+                      transition={{ type: "spring", bounce: 0.1, duration: 0.4 }}
+                    />
+                  )}
+                  <span className="relative z-10">Day {day.day}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button 
+                onClick={() => setShowPacking(!showPacking)}
                 className={cn(
-                  "relative px-5 py-2.5 rounded-2xl text-xs font-black transition-all duration-500 overflow-hidden",
-                  activeDay === idx 
-                    ? "text-white" 
-                    : "text-black/30 hover:text-black/50"
+                  "p-2.5 rounded-xl transition-all duration-300 relative",
+                  showPacking ? "bg-emerald-500 text-white" : "bg-black/5 text-black/40 hover:bg-black/10"
                 )}
+                title="Bản đồ chuẩn bị đồ dùng"
               >
-                {activeDay === idx && (
-                  <motion.div 
-                    layoutId="activeDayBg"
-                    className="absolute inset-0 bg-black z-0"
-                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                  />
+                <CheckCircle size={16} />
+                {checkedItems.length > 0 && !showPacking && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 text-white text-[8px] flex items-center justify-center rounded-full border-2 border-[#FDFCFB]">
+                    {checkedItems.length}
+                  </span>
                 )}
-                <span className="relative z-10">Day {day.day}</span>
               </button>
-            ))}
+              <button 
+                onClick={() => setShowMap(!showMap)}
+                className={cn(
+                  "p-2.5 rounded-xl transition-all duration-300",
+                  showMap ? "bg-black text-white" : "bg-black/5 text-black/40 hover:bg-black/10"
+                )}
+                title="Xem bản đồ hành trình"
+              >
+                <MapIcon size={16} />
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setShowPacking(!showPacking)}
-              className={cn(
-                "p-2.5 rounded-xl transition-all duration-300 relative",
-                showPacking ? "bg-emerald-500 text-white" : "bg-black/5 text-black/40 hover:bg-black/10"
-              )}
-            >
-              <CheckCircle size={18} />
-              {checkedItems.length > 0 && !showPacking && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 text-white text-[8px] flex items-center justify-center rounded-full border-2 border-[#FDFCFB]">
-                  {checkedItems.length}
-                </span>
-              )}
-            </button>
-            <button 
-              onClick={() => setShowMap(!showMap)}
-              className={cn(
-                "p-2.5 rounded-xl transition-all duration-300",
-                showMap ? "bg-black text-white" : "bg-black/5 text-black/40 hover:bg-black/10"
-              )}
-            >
-              <MapIcon size={18} />
-            </button>
-          </div>
-        </div>
-      </nav>
+        </nav>
+      )}
 
       {/* Main Content Area */}
       <main ref={mainRef} className="flex-1 overflow-y-auto pb-40">
@@ -339,17 +743,17 @@ export default function App() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Users size={14} className="text-emerald-600" />
-                    <h3 className="text-sm font-black uppercase tracking-widest text-emerald-800/60">Shared Checklist</h3>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-emerald-800/80">Checklist Đồng Đội</h3>
                     <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 rounded-full">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
                       <span className="text-[8px] font-black text-emerald-600 uppercase tracking-tighter">
-                        {userCount} {userCount === 1 ? 'User' : 'Users'} Online
+                        {userCount} Online
                       </span>
                     </div>
                   </div>
-                  <span className="text-[10px] font-mono text-emerald-600/50">{checkedItems.length}/{PACKING_LIST.length} Done</span>
+                  <span className="text-[10px] font-black text-emerald-600/50 font-mono">{checkedItems.length}/{PACKING_LIST.length}</span>
                 </div>
-                <div className="grid grid-cols-1 gap-2">
+                <div className="grid grid-cols-1 gap-1.5">
                   {PACKING_LIST.map(item => (
                     <button
                       key={item.id}
@@ -357,14 +761,14 @@ export default function App() {
                       className="flex items-center gap-3 p-3 bg-white rounded-xl border border-emerald-100 shadow-sm text-left transition-all active:scale-95"
                     >
                       <div className={cn(
-                        "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
+                        "w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-all",
                         checkedItems.includes(item.id) ? "bg-emerald-500 border-emerald-500 text-white" : "border-emerald-200"
                       )}>
-                        {checkedItems.includes(item.id) && <CheckCircle2 size={12} />}
+                        {checkedItems.includes(item.id) && <CheckCircle2 size={10} />}
                       </div>
-                      <div className="flex flex-col">
-                        <span className={cn("text-xs font-bold", checkedItems.includes(item.id) ? "text-black/30 line-through" : "text-black/70")}>{item.item}</span>
-                        <span className="text-[9px] font-mono text-black/20 uppercase tracking-tighter">{item.category}</span>
+                      <div className="flex flex-col select-none">
+                        <span className={cn("text-xs font-black", checkedItems.includes(item.id) ? "text-black/30 line-through" : "text-black/70")}>{item.item}</span>
+                        <span className="text-[8px] font-mono font-black text-black/20 uppercase tracking-tighter leading-none">{item.category}</span>
                       </div>
                     </button>
                   ))}
@@ -373,7 +777,7 @@ export default function App() {
             </motion.div>
           )}
 
-          {showMap && (
+          {showMap && currentDay && currentDay.locations.length > 0 && (
             <motion.div 
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 350 }}
@@ -382,7 +786,7 @@ export default function App() {
             >
               <MapContainer 
                 center={mapCenter} 
-                zoom={13} 
+                zoom={12} 
                 scrollWheelZoom={false}
                 className="h-full w-full"
               >
@@ -413,183 +817,203 @@ export default function App() {
                   opacity={0.4} 
                   dashArray="12, 12"
                 />
-                <MapUpdater center={mapCenter} zoom={selectedLocationId ? 15 : 12} />
+                <MapUpdater center={mapCenter} zoom={selectedLocationId ? 14 : 11} />
               </MapContainer>
             </motion.div>
           )}
         </AnimatePresence>
 
         <div className="p-8">
-          <motion.div
-            key={activeDay}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            className="space-y-12"
-          >
-            <div className="flex items-end justify-between border-b border-black/5 pb-6">
-              <div>
-                <h2 className="text-3xl font-serif font-bold text-black/90 leading-none tracking-tight">{currentDay.title}</h2>
-                <div className="flex items-center gap-3 mt-4">
-                  <p className="text-[11px] text-emerald-600 font-black uppercase tracking-widest flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-full">
-                    <Calendar size={12} /> {currentDay.date}
-                  </p>
-                  <p className="text-[11px] text-black/30 font-black uppercase tracking-widest flex items-center gap-1.5">
-                    <Navigation2 size={12} /> {currentDay.locations.length} Stops
-                  </p>
+          <AnimatePresence mode="wait">
+            {currentDay ? (
+              <motion.div
+                key={activeDay}
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                className="space-y-10"
+              >
+                <div className="flex items-end justify-between border-b border-black/5 pb-5">
+                  <div>
+                    <h2 className="text-2xl font-bold text-black/90 leading-tight tracking-tight">{currentDay.title}</h2>
+                    <div className="flex items-center gap-3 mt-3">
+                      <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest flex items-center gap-1 bg-emerald-50 px-2.5 py-1.5 rounded-full">
+                        <Calendar size={11} /> {currentDay.date}
+                      </p>
+                      <p className="text-[10px] text-black/30 font-black uppercase tracking-widest flex items-center gap-1.5">
+                        <Navigation2 size={11} /> {currentDay.locations.length} Stops
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-black/5 rounded-2xl text-black/15">
+                    <Info size={16} />
+                  </div>
                 </div>
-              </div>
-              <div className="p-3 bg-black/5 rounded-2xl text-black/10">
-                <Info size={20} />
-              </div>
-            </div>
 
-            <div className="relative space-y-16 before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-[2px] before:bg-gradient-to-b before:from-emerald-400/30 before:via-black/5 before:to-transparent">
-              {currentDay.locations.map((loc, idx) => {
-                const nextLoc = currentDay.locations[idx + 1];
-                const distance = nextLoc ? getDistance(loc.lat, loc.lng, nextLoc.lat, nextLoc.lng) : 0;
+                {/* Timeline rendering block */}
+                <div className="relative space-y-12 before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-[2px] before:bg-gradient-to-b before:from-emerald-400/30 before:via-black/5 before:to-transparent">
+                  {currentDay.locations.map((loc, idx) => {
+                    const nextLoc = currentDay.locations[idx + 1];
+                    const distance = nextLoc ? getDistance(loc.lat, loc.lng, nextLoc.lat, nextLoc.lng) : 0;
 
-                return (
-                  <div key={loc.id} className="relative">
-                    <motion.div 
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: idx * 0.1 }}
-                      className="relative pl-16 group cursor-pointer"
-                      onClick={() => setSelectedLocationId(selectedLocationId === loc.id ? null : loc.id)}
-                    >
-                      {/* Timeline Dot */}
-                      <div className={cn(
-                        "absolute left-0 top-1 w-10 h-10 rounded-full border-4 border-[#FDFCFB] flex items-center justify-center z-10 transition-all duration-500 shadow-lg",
-                        selectedLocationId === loc.id 
-                          ? "bg-black text-white scale-125 rotate-[360deg] shadow-black/20" 
-                          : "bg-white text-black/20 group-hover:text-black/50 group-hover:scale-110 group-hover:shadow-xl"
-                      )}>
-                        <LocationIcon type={loc.type} className="w-4.5 h-4.5" />
-                      </div>
-
-                      <div className="space-y-5">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 text-[11px] font-mono font-black uppercase tracking-[0.2em] text-emerald-600/60">
-                            <Clock size={14} /> {loc.time}
+                    return (
+                      <div key={loc.id} className="relative">
+                        <motion.div 
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="relative pl-14 group cursor-pointer"
+                          onClick={() => setSelectedLocationId(selectedLocationId === loc.id ? null : loc.id)}
+                        >
+                          {/* Timeline Dot */}
+                          <div className={cn(
+                            "absolute left-0 top-1 w-9 h-9 rounded-full border-4 border-[#FDFCFB] flex items-center justify-center z-10 transition-all duration-300 shadow-md",
+                            selectedLocationId === loc.id 
+                              ? "bg-black text-white scale-110 shadow-black/25" 
+                              : "bg-white text-black/15 group-hover:text-black/40 group-hover:scale-105"
+                          )}>
+                            <LocationIcon type={loc.type} className="w-3.5 h-3.5" />
                           </div>
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigateToLocation(loc);
-                            }}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-black/5 text-black/50 hover:bg-black hover:text-white transition-all duration-500 text-[10px] font-black uppercase tracking-widest shadow-sm active:scale-90"
-                          >
-                            <ExternalLink size={12} /> Go
-                          </button>
-                        </div>
 
-                        <h3 className={cn(
-                          "text-2xl font-bold leading-tight transition-all duration-500 tracking-tight",
-                          selectedLocationId === loc.id ? "text-black translate-x-3" : "text-black/70"
-                        )}>
-                          {loc.name}
-                        </h3>
-                        
-                        <p className="text-base text-black/50 leading-relaxed font-medium">
-                          {loc.description}
-                        </p>
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-[10px] font-mono font-black uppercase tracking-wider text-emerald-600/70">
+                                <Clock size={12} /> {loc.time}
+                              </div>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigateToLocation(loc);
+                                }}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-black/5 text-black/50 hover:bg-black hover:text-white transition-all duration-350 text-[9px] font-black uppercase tracking-wider active:scale-90"
+                              >
+                                <ExternalLink size={10} /> dẫn đường
+                              </button>
+                            </div>
 
-                        {loc.guide && (
-                          <div className="mt-3 px-4 py-3 rounded-2xl bg-amber-50/90 border border-amber-200/60 flex items-start gap-2.5 shadow-sm text-xs text-amber-900/90">
-                            <span className="text-sm">📒</span>
-                            <div className="flex-1 leading-relaxed">
-                              <span className="font-black text-amber-950 block mb-0.5 text-[9px] uppercase tracking-wider">Ghi chú / Hướng dẫn:</span>
-                              {loc.guide}
+                            <h3 className={cn(
+                              "text-xl font-bold leading-none transition-all duration-300 tracking-tight",
+                              selectedLocationId === loc.id ? "text-emerald-600 translate-x-2" : "text-black/80"
+                            )}>
+                              {loc.name}
+                            </h3>
+                            
+                            <p className="text-xs text-black/45 leading-relaxed font-semibold">
+                              {loc.description}
+                            </p>
+
+                            {/* Sticky-guide note if exists */}
+                            {loc.guide && (
+                              <div className="mt-2.5 px-3.5 py-2.5 rounded-2xl bg-amber-50/80 border border-amber-200/50 flex items-start gap-2 shadow-sm text-[11px] text-amber-900/90 leading-relaxed">
+                                <span className="text-xs">📒</span>
+                                <div className="flex-1">
+                                  <span className="font-extrabold text-amber-950 block text-[8px] uppercase tracking-wider leading-none mb-1">Cần nhớ:</span>
+                                  {loc.guide}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Expansion list recommendations */}
+                            <AnimatePresence>
+                              {(selectedLocationId === loc.id || loc.suggestions) && (
+                                <motion.div 
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: 'auto' }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  className="overflow-hidden"
+                                >
+                                  {loc.suggestions && (
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                      {loc.suggestions.map(s => (
+                                        <span key={s} className="text-[10px] bg-emerald-50 text-emerald-800/80 px-4 py-2 rounded-xl font-black border border-emerald-100/50 shadow-sm leading-none">
+                                          ✨ {s}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {loc.address && (
+                                    <div className="mt-4 p-4 rounded-2xl bg-black/[0.015] border border-black/[0.04] flex items-start gap-4 hover:bg-black/[0.03] transition-all">
+                                      <div className="p-2 ml-1 rounded-xl bg-white shadow-sm text-black/20">
+                                        <MapPin size={14} />
+                                      </div>
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="text-[8px] font-mono text-black/20 uppercase tracking-widest font-black">Địa chỉ</span>
+                                        <span className="text-[10px] text-black/50 font-bold leading-normal">
+                                          {loc.address}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        </motion.div>
+
+                        {/* Distance Indicator in-between nodes */}
+                        {nextLoc && (
+                          <div className="absolute left-[19px] top-[50%] -translate-y-1/2 -translate-x-[110%] z-20">
+                            <div className="flex flex-col items-center bg-white border border-black/5 px-1 py-0.5 rounded-md shadow-sm whitespace-nowrap">
+                              <span className="text-[7.5px] font-mono font-black text-black/40">
+                                {distance < 1 ? `${(distance * 1000).toFixed(0)}m` : `${distance.toFixed(1)}km`}
+                              </span>
                             </div>
                           </div>
                         )}
-
-                        <AnimatePresence>
-                          {(selectedLocationId === loc.id || loc.suggestions) && (
-                            <motion.div 
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="overflow-hidden"
-                            >
-                              {loc.suggestions && (
-                                <div className="mt-6 flex flex-wrap gap-3">
-                                  {loc.suggestions.map(s => (
-                                    <span key={s} className="text-[11px] bg-emerald-50 text-emerald-800/60 px-5 py-2.5 rounded-2xl font-black border border-emerald-100/50 shadow-sm">
-                                      ✨ {s}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              {loc.address && (
-                                <div className="mt-5 p-5 rounded-[2rem] bg-black/[0.02] border border-black/[0.05] flex items-start gap-5 group/addr hover:bg-black/[0.04] transition-all duration-300">
-                                  <div className="p-3 rounded-2xl bg-white shadow-sm text-black/20 group-hover/addr:text-emerald-500 transition-colors">
-                                    <MapPin size={18} />
-                                  </div>
-                                  <div className="flex flex-col gap-1">
-                                    <span className="text-[10px] font-mono text-black/20 uppercase tracking-widest font-bold">Address</span>
-                                    <span className="text-xs text-black/40 font-bold leading-relaxed">
-                                      {loc.address}
-                                    </span>
-                                  </div>
-                                </div>
-                              )}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
                       </div>
-                    </motion.div>
-
-                    {/* Distance Indicator - Positioned to the left of the timeline to avoid title overlap */}
-                    {nextLoc && (
-                      <div className="absolute left-[19px] top-[50%] -translate-y-1/2 -translate-x-[110%] z-20">
-                        <div className="flex flex-col items-center bg-white/90 backdrop-blur-sm px-1.5 py-1 rounded-lg border border-black/5 shadow-sm whitespace-nowrap">
-                          <Route size={8} className="text-emerald-500/50 mb-0.5" />
-                          <span className="text-[8px] font-mono font-black text-black/40">
-                            {distance < 1 ? `${(distance * 1000).toFixed(0)}m` : `${distance.toFixed(1)}km`}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            ) : (
+              <div className="py-20 text-center space-y-4">
+                <Compass className="mx-auto text-black/15 animate-bounce" size={40} />
+                <h3 className="text-md font-black uppercase text-black/30">Chưa có ngày hay địa điểm</h3>
+                <p className="text-xs text-black/40 max-w-[200px] mx-auto">
+                  Click đúp vào biểu tượng ngôi sao màu vàng ba lần ở góc bên phải để kích hoạt chế độ **Admin** nhằm thêm mới sự kiện!
+                </p>
+                <button
+                  onClick={handleSparkleClick}
+                  className="px-4 py-2 bg-black text-white text-[10px] font-black uppercase rounded-lg shadow-md"
+                >
+                  Kích hoạt bí mật
+                </button>
+              </div>
+            )}
+          </AnimatePresence>
         </div>
       </main>
 
-      {/* Floating Footer Navigation */}
+      {/* Floating Footer Navigation controls */}
       <AnimatePresence>
-        {showFooter && (
+        {showFooter && currentDay && (
           <motion.footer 
             initial={{ opacity: 0, y: 100 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 100 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-6rem)] max-w-[calc(448px-6rem)] z-40"
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-6rem)] max-w-[calc(448px-6rem)] z-40 animate-pulse"
           >
-            <div className="bg-black/95 backdrop-blur-3xl text-white rounded-full p-2.5 shadow-[0_15px_30px_rgba(0,0,0,0.4)] flex items-center justify-between border border-white/10">
+            <div className="bg-black text-white rounded-full p-2.5 shadow-lg flex items-center justify-between border border-white/5">
               <div className="flex flex-col pl-4">
-                <span className="text-[7px] font-mono opacity-30 uppercase tracking-[0.3em] font-black">Day {activeDay + 1}</span>
-                <span className="text-[11px] font-black tracking-tight truncate max-w-[120px]">
-                  {currentDay.title}
+                <span className="text-[7px] font-mono opacity-40 uppercase tracking-widest font-black leading-none mb-1">Hành trình</span>
+                <span className="text-[10px] font-black tracking-tight truncate max-w-[120px] leading-tight">
+                  Day {activeDay + 1}: {currentDay.title}
                 </span>
               </div>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1">
                 <button 
                   onClick={() => setActiveDay(prev => Math.max(0, prev - 1))}
                   disabled={activeDay === 0}
-                  className="p-2 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-5 transition-all active:scale-90"
+                  className="p-2 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-20 transition-all active:scale-90"
                 >
-                  <ChevronLeft size={16} />
+                  <ChevronLeft size={14} />
                 </button>
                 <button 
                   onClick={() => setActiveDay(prev => Math.min(itinerary.length - 1, prev + 1))}
                   disabled={activeDay === itinerary.length - 1}
-                  className="p-2 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-5 transition-all active:scale-90"
+                  className="p-2 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-20 transition-all active:scale-90"
                 >
-                  <ChevronRight size={16} />
+                  <ChevronRight size={14} />
                 </button>
               </div>
             </div>
@@ -598,11 +1022,10 @@ export default function App() {
       </AnimatePresence>
 
       {/* Atmospheric Blur Backgrounds */}
-      <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-[-1] opacity-60">
-        <div className="absolute top-[-40%] left-[-40%] w-[120%] h-[120%] bg-emerald-100/20 rounded-full blur-[180px] animate-pulse" />
-        <div className="absolute bottom-[-40%] right-[-40%] w-[120%] h-[120%] bg-orange-50/20 rounded-full blur-[180px] animate-pulse" style={{ animationDelay: '3s' }} />
+      <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-[-1] opacity-40">
+        <div className="absolute top-[-30%] left-[-30%] w-[100%] h-[100%] bg-emerald-100 rounded-full blur-[160px] animate-pulse" />
+        <div className="absolute bottom-[-30%] right-[-30%] w-[100%] h-[100%] bg-amber-50 rounded-full blur-[160px] animate-pulse" style={{ animationDelay: '3s' }} />
       </div>
     </div>
   );
 }
-
